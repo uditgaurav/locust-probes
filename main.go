@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,18 +29,10 @@ func main() {
 	var err error
 	var helperPodFound bool
 
-	totalChaosDurationEnv := os.Getenv("TOTAL_CHAOS_DURATION")
-	if totalChaosDurationEnv != "" {
-		// Parse the duration
-		totalChaosDuration, err := time.ParseDuration(totalChaosDurationEnv)
-		if err != nil {
-			fmt.Println("ERROR: Failed to parse TOTAL_CHAOS_DURATION:", err)
-			return // Exit the program
-		}
+	totalChaosDurationEnv, _ := strconv.Atoi(os.Getenv("TOTAL_CHAOS_DURATION"))
+	// Sleep for the specified duration
+	time.Sleep(time.Duration(totalChaosDurationEnv) * time.Second)
 
-		// Sleep for the specified duration
-		time.Sleep(totalChaosDuration)
-	}
 	// Define the flags
 	flag.StringVar(&apiKey, "api-key", "", "Harness API key")
 	flag.StringVar(&accountIdentifier, "account-identifier", "", "Account Identifier")
