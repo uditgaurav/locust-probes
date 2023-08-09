@@ -1,0 +1,31 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  IMAGE_NAME: locust
+  DOCKER_USERNAME: ${{ secrets.DNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DPASS }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Login to Docker Hub
+      run: echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
+    - name: Build the Docker image
+      run: docker build -t $IMAGE_NAME .
+
+    - name: Tag Docker image
+      run: docker tag $IMAGE_NAME $DOCKER_USERNAME/$IMAGE_NAME:latest
+
+    - name: Push Docker image to Docker Hub
+      run: docker push $DOCKER_USERNAME/$IMAGE_NAME:latest
