@@ -25,6 +25,7 @@ var projectIdentifier string
 func main() {
 	var config *rest.Config
 	var err error
+	var helperPodFound bool
 
 	// Define the flags
 	flag.StringVar(&apiKey, "api-key", "", "Harness API key")
@@ -68,6 +69,7 @@ func main() {
 	for _, pod := range pods.Items {
 		if strings.Contains(pod.Name, "helper") {
 			if chaosUIDLabel, found := pod.Labels["chaosUID"]; found && chaosUIDLabel == chaosUIDEnv {
+				helperPodFound = true
 				logOptions := v1.PodLogOptions{}
 				req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &logOptions)
 				podLogs, err := req.DoRaw(ctx)
@@ -83,6 +85,11 @@ func main() {
 				fmt.Println("PASS")
 			}
 		}
+	}
+	// Check if the helper pod was found
+	if !helperPodFound {
+		fmt.Println("ERROR: Helper pod not found.")
+		return // Exit the program
 	}
 }
 
