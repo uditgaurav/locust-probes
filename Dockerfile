@@ -1,5 +1,5 @@
 # Use the official Go image to create a build environment
-FROM golang:1.17 as builder
+FROM golang:1.19 as builder
 
 # Set the working directory
 WORKDIR /src
