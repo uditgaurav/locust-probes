@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +28,18 @@ func main() {
 	var err error
 	var helperPodFound bool
 
+	totalChaosDurationEnv := os.Getenv("TOTAL_CHAOS_DURATION")
+	if totalChaosDurationEnv != "" {
+		// Parse the duration
+		totalChaosDuration, err := time.ParseDuration(totalChaosDurationEnv)
+		if err != nil {
+			fmt.Println("ERROR: Failed to parse TOTAL_CHAOS_DURATION:", err)
+			return // Exit the program
+		}
+
+		// Sleep for the specified duration
+		time.Sleep(totalChaosDuration)
+	}
 	// Define the flags
 	flag.StringVar(&apiKey, "api-key", "", "Harness API key")
 	flag.StringVar(&accountIdentifier, "account-identifier", "", "Account Identifier")
