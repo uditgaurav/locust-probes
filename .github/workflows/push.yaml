@@ -9,7 +9,6 @@ on:
 jobs:
 
   push:
-    needs: pre-checks
     runs-on: ubuntu-latest
     steps:
 
