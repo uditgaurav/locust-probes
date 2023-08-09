@@ -1,31 +1,45 @@
-name: Build and Push Docker Image
-
+---
+name: Push
 on:
   push:
     branches:
       - master
-
-env:
-  IMAGE_NAME: locust
-  DOCKER_USERNAME: ${{ secrets.DNAME }}
-  DOCKER_PASSWORD: ${{ secrets.DPASS }}
-
+    tags-ignore:
+      - '**'
 jobs:
-  build:
+
+  push:
+    needs: pre-checks
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
 
-    - name: Login to Docker Hub
-      run: echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+      # Install golang
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.20.0
+      - uses: actions/checkout@v2
 
-    - name: Build the Docker image
-      run: docker build -t $IMAGE_NAME .
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+        with:
+          platforms: all
 
-    - name: Tag Docker image
-      run: docker tag $IMAGE_NAME $DOCKER_USERNAME/$IMAGE_NAME:latest
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          version: latest
 
-    - name: Push Docker image to Docker Hub
-      run: docker push $DOCKER_USERNAME/$IMAGE_NAME:latest
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DNAME }}
+          password: ${{ secrets.DPASS }}
+
+      - name: Build and push go-runner image
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          file: Dockerfile
+          platforms: linux/amd64
+          tags: uditgaurav/locust:latest
