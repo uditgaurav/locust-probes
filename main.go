@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -29,47 +30,42 @@ func main() {
 	var err error
 	var helperPodFound bool
 
-	totalChaosDurationEnv, _ := strconv.Atoi(os.Getenv("TOTAL_CHAOS_DURATION"))
-	// Sleep for the specified duration
+	totalChaosDurationEnv, err := strconv.Atoi(os.Getenv("TOTAL_CHAOS_DURATION"))
+	if err != nil {
+		log.Fatalf("Error parsing TOTAL_CHAOS_DURATION: %v", err)
+	}
+
 	time.Sleep(time.Duration(totalChaosDurationEnv) * time.Second)
 
-	// Define the flags
 	flag.StringVar(&apiKey, "api-key", "", "Harness API key")
 	flag.StringVar(&accountIdentifier, "account-identifier", "", "Account Identifier")
 	flag.StringVar(&orgIdentifier, "org-identifier", "", "Organization Identifier")
 	flag.StringVar(&projectIdentifier, "project-identifier", "", "Project Identifier")
 
-	// Parse the flags
 	flag.Parse()
 
-	// Get KUBECONFIG from environment variable
 	kubeconfig := os.Getenv("KUBECONFIG")
-
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
-		// Use in-cluster configuration
 		config, err = rest.InClusterConfig()
 	}
 
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to configure k8s client: %v", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to create k8s clientset: %v", err)
 	}
 
-	// Get CHAOS_UID from the environment variable
 	chaosUIDEnv := os.Getenv("CHAOS_UID")
-
-	// Create a context
 	ctx := context.TODO()
 
-	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{}) // Corrected line
+	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to list pods: %v", err)
 	}
 
 	for _, pod := range pods.Items {
@@ -80,22 +76,22 @@ func main() {
 				req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &logOptions)
 				podLogs, err := req.DoRaw(ctx)
 				if err != nil {
-					panic(err)
+					log.Printf("Failed to get logs for pod %s: %v", pod.Name, err)
+					continue
 				}
 
 				err = uploadToHarness(pod.Name, podLogs)
 				if err != nil {
-					fmt.Println("Failed to upload logs:", err)
+					log.Printf("Failed to upload logs for pod %s: %v", pod.Name, err)
 				}
 
 				fmt.Println("PASS")
 			}
 		}
 	}
-	// Check if the helper pod was found
+
 	if !helperPodFound {
-		fmt.Println("ERROR: Helper pod not found.")
-		return // Exit the program
+		log.Println("ERROR: Helper pod not found.")
 	}
 }
 
@@ -105,21 +101,32 @@ func uploadToHarness(podName string, logContent []byte) error {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	// Add required fields
-	writer.WriteField("name", podName)
-	writer.WriteField("fileUsage", "MANIFEST_FILE")
-	writer.WriteField("type", "FILE")
-	writer.WriteField("path", "chaos/"+podName) // Path to the folder named chaos
+	if err := writer.WriteField("name", podName); err != nil {
+		return err
+	}
 
-	// Add log content
+	if err := writer.WriteField("fileUsage", "MANIFEST_FILE"); err != nil {
+		return err
+	}
+
+	if err := writer.WriteField("type", "FILE"); err != nil {
+		return err
+	}
+
+	if err := writer.WriteField("path", "chaos/"+podName); err != nil {
+		return err
+	}
+
 	contentPart, err := writer.CreateFormField("content")
 	if err != nil {
 		return err
 	}
-	contentPart.Write(logContent)
 
-	err = writer.Close()
-	if err != nil {
+	if _, err = contentPart.Write(logContent); err != nil {
+		return err
+	}
+
+	if err := writer.Close(); err != nil {
 		return err
 	}
 
@@ -128,7 +135,6 @@ func uploadToHarness(podName string, logContent []byte) error {
 		return err
 	}
 
-	// Add API key header (from flag)
 	req.Header.Add("x-api-key", apiKey)
 	req.Header.Add("Content-Type", writer.FormDataContentType())
 
