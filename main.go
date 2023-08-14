@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -82,14 +83,14 @@ func extractHelperPod(chaosUID string) (map[string]string, error) {
 			req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
 			podLogs, err := req.Stream(context.TODO())
 			if err != nil {
-				panic(err.Error())
+				return nil, err
 			}
 			defer podLogs.Close()
 
 			buf := new(strings.Builder)
 			_, err = io.Copy(buf, podLogs)
 			if err != nil {
-				panic(err.Error())
+				return nil, err
 			}
 
 			podLogsMap[pod.Name] = buf.String()
@@ -97,7 +98,7 @@ func extractHelperPod(chaosUID string) (map[string]string, error) {
 	}
 
 	if len(podLogsMap) == 0 {
-		panic("No matching pods found")
+		return nil, errors.Errorf("No matching pods found")
 	}
 
 	return podLogsMap, nil
