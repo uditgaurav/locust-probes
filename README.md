@@ -13,7 +13,7 @@
                             cmdProbe/inputs:
                               command: ./app
                               source:
-                                image: docker.io/uditgaurav/locust:latest
+                                image: docker.io/chaosnative/locust:latest
                                 inheritInputs: true
                               comparator:
                                 type: string
