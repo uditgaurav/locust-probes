@@ -1,153 +1,175 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
-	"mime/multipart"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-var apiKey string
-var accountIdentifier string
-var orgIdentifier string
-var projectIdentifier string
-
 func main() {
-	var config *rest.Config
-	var err error
-	var helperPodFound bool
+	accountID := Getenv("ACCOUNT_ID", "")
+	projectID := Getenv("PROJECT_ID", "")
+	apiKey := Getenv("API_KEY", "")
+	chaosUID := Getenv("CHAOS_UID", "")
+	folderName := Getenv("FOLDER_NAME", "chaos")
 
-	totalChaosDurationEnv, err := strconv.Atoi(os.Getenv("TOTAL_CHAOS_DURATION"))
+	podLogsMap, err := extractHelperPod(chaosUID)
 	if err != nil {
-		log.Fatalf("Error parsing TOTAL_CHAOS_DURATION: %v", err)
+		log.Fatal(err)
 	}
 
-	time.Sleep(time.Duration(totalChaosDurationEnv) * time.Second)
+	for podName, logs := range podLogsMap {
+		rand.Seed(time.Now().UnixNano())
+		randomNumber := rand.Int()
 
-	flag.StringVar(&apiKey, "api-key", "", "Harness API key")
-	flag.StringVar(&accountIdentifier, "account-identifier", "", "Account Identifier")
-	flag.StringVar(&orgIdentifier, "org-identifier", "", "Organization Identifier")
-	flag.StringVar(&projectIdentifier, "project-identifier", "", "Project Identifier")
+		fmt.Printf("pushing logs for pod: %v\n", podName)
+		if err := PushToFileStore(accountID, projectID, apiKey, podName, logs, folderName, strconv.Itoa(randomNumber)); err != nil {
+			log.Fatal(err)
+		}
+	}
+	fmt.Println("PASS")
+}
 
-	flag.Parse()
+func extractHelperPod(chaosUID string) (map[string]string, error) {
 
 	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
+
+	var config *rest.Config
+	var err error
+
+	if kubeconfig == "" {
+		// Use in-cluster configuration if KUBECONFIG env var is not set
 		config, err = rest.InClusterConfig()
+	} else {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
 
 	if err != nil {
-		log.Fatalf("Failed to configure k8s client: %v", err)
+		return nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Fatalf("Failed to create k8s clientset: %v", err)
+		return nil, err
 	}
 
-	chaosUIDEnv := os.Getenv("CHAOS_UID")
-	ctx := context.TODO()
-
-	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("chaosUID=%s", chaosUID),
+	})
 	if err != nil {
-		log.Fatalf("Failed to list pods: %v", err)
+		return nil, err
 	}
+
+	podLogsMap := make(map[string]string)
 
 	for _, pod := range pods.Items {
 		if strings.Contains(pod.Name, "helper") {
-			if chaosUIDLabel, found := pod.Labels["chaosUID"]; found && chaosUIDLabel == chaosUIDEnv {
-				helperPodFound = true
-				logOptions := v1.PodLogOptions{}
-				req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &logOptions)
-				podLogs, err := req.DoRaw(ctx)
-				if err != nil {
-					log.Printf("Failed to get logs for pod %s: %v", pod.Name, err)
-					continue
-				}
-
-				err = uploadToHarness(pod.Name, podLogs)
-				if err != nil {
-					log.Printf("Failed to upload logs for pod %s: %v", pod.Name, err)
-				}
-
-				fmt.Println("PASS")
+			podLogOpts := corev1.PodLogOptions{}
+			req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
+			podLogs, err := req.Stream(context.TODO())
+			if err != nil {
+				panic(err.Error())
 			}
+			defer podLogs.Close()
+
+			buf := new(strings.Builder)
+			_, err = io.Copy(buf, podLogs)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			podLogsMap[pod.Name] = buf.String()
 		}
 	}
 
-	if !helperPodFound {
-		log.Println("ERROR: Helper pod not found.")
+	if len(podLogsMap) == 0 {
+		panic("No matching pods found")
 	}
+
+	return podLogsMap, nil
 }
 
-func uploadToHarness(podName string, logContent []byte) error {
-	url := fmt.Sprintf("https://app.harness.io/ng/api/file-store?accountIdentifier=%s&orgIdentifier=%s&projectIdentifier=%s", accountIdentifier, orgIdentifier, projectIdentifier)
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	if err := writer.WriteField("name", podName); err != nil {
-		return err
-	}
-
-	if err := writer.WriteField("fileUsage", "MANIFEST_FILE"); err != nil {
-		return err
-	}
-
-	if err := writer.WriteField("type", "FILE"); err != nil {
-		return err
-	}
-
-	if err := writer.WriteField("path", "chaos/"+podName); err != nil {
-		return err
-	}
-
-	contentPart, err := writer.CreateFormField("content")
-	if err != nil {
-		return err
-	}
-
-	if _, err = contentPart.Write(logContent); err != nil {
-		return err
-	}
-
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("POST", url, body)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Add("x-api-key", apiKey)
-	req.Header.Add("Content-Type", writer.FormDataContentType())
-
+// PushToFileStore will push the file content in the File Store
+func PushToFileStore(accountID, projectID, apiKey, podName, logs, folderName, randomNumber string) error {
 	client := &http.Client{}
+
+	identifier := "chaos_test_txt_" + randomNumber
+
+	formattedData := fmt.Sprintf(`------WebKitFormBoundaryxzJwMPPeTzodmhMO
+Content-Disposition: form-data; name="type"
+
+FILE
+------WebKitFormBoundaryxzJwMPPeTzodmhMO
+Content-Disposition: form-data; name="content"; filename="%s"
+Content-Type: text/plain
+
+%s
+
+------WebKitFormBoundaryxzJwMPPeTzodmhMO
+Content-Disposition: form-data; name="mimeType"
+
+txt
+------WebKitFormBoundaryxzJwMPPeTzodmhMO
+Content-Disposition: form-data; name="name"
+
+%s
+------WebKitFormBoundaryxzJwMPPeTzodmhMO
+Content-Disposition: form-data; name="identifier"
+
+%s
+------WebKitFormBoundaryxzJwMPPeTzodmhMO
+Content-Disposition: form-data; name="parentIdentifier"
+
+%s
+------WebKitFormBoundaryxzJwMPPeTzodmhMO--`, podName, logs, podName, identifier, folderName)
+
+	data := strings.NewReader(formattedData)
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("https://app.harness.io/gateway/ng/api/file-store?routingId=%s&accountIdentifier=%s&orgIdentifier=default&projectIdentifier=%s", accountID, accountID, projectID), data)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("content-type", "multipart/form-data; boundary=----WebKitFormBoundaryxzJwMPPeTzodmhMO")
+
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to upload logs, status code: %d", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		log.Fatalf("failed to push logs for %v pod, status code: %v", podName, resp.StatusCode)
 	}
 
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("File created successfully")
+
 	return nil
+}
+
+func Getenv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
