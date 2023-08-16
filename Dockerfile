@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -v -o /app bin/app/main.go
 FROM alpine:3.14
 
 # Copy the binary from the builder stage
-COPY --from=builder /src/app /app
+COPY --from=builder /app /app
 
 # Run the application
 ENTRYPOINT ["/app"]
