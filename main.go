@@ -30,7 +30,7 @@ func main() {
 
 	podLogsMap, err := extractHelperPod(chaosUID)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("failed to get helper pod, err: %v", err)
 	}
 
 	for podName, logs := range podLogsMap {
@@ -39,7 +39,7 @@ func main() {
 
 		fmt.Printf("pushing logs for pod: %v\n", podName)
 		if err := PushToFileStore(accountID, projectID, apiKey, podName, logs, folderName, strconv.Itoa(randomNumber)); err != nil {
-			log.Fatal(err)
+			log.Fatal("failed to push helper logs, err: %v", err)
 		}
 	}
 	fmt.Println("PASS")
@@ -142,7 +142,7 @@ Content-Disposition: form-data; name="parentIdentifier"
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("https://app.harness.io/gateway/ng/api/file-store?routingId=%s&accountIdentifier=%s&orgIdentifier=default&projectIdentifier=%s", accountID, accountID, projectID), data)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	req.Header.Set("x-api-key", apiKey)
@@ -150,17 +150,17 @@ Content-Disposition: form-data; name="parentIdentifier"
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		log.Fatalf("failed to push logs for %v pod, status code: %v", podName, resp.StatusCode)
+		return errors.Errorf("failed to push logs for %v pod, status code: %v", podName, resp.StatusCode)
 	}
 
 	_, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Println("File created successfully")
 
