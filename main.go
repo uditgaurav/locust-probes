@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/litmuschaos/litmus-go/pkg/log"
+
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,18 +31,16 @@ func main() {
 
 	podLogsMap, err := extractHelperPod(chaosUID)
 	if err != nil {
-		fmt.Printf("failed to get helper pod, err: %v", err)
-		os.Exit(0)
+		log.Errorf("failed to get helper pod, err: %v", err)
 	}
 
 	for podName, logs := range podLogsMap {
 		rand.Seed(time.Now().UnixNano())
 		randomNumber := rand.Int()
 
-		fmt.Printf("pushing logs for pod: %v\n", podName)
+		log.Infof("pushing logs for pod: %v", podName)
 		if err := PushToFileStore(accountID, projectID, apiKey, podName, logs, folderName, strconv.Itoa(randomNumber)); err != nil {
-			fmt.Printf("failed to push helper logs, err: %v", err)
-			os.Exit(0)
+			log.Errorf("failed to push helper logs, err: %v", err)
 		}
 	}
 	fmt.Println("PASS")
@@ -163,7 +163,7 @@ Content-Disposition: form-data; name="parentIdentifier"
 	if err != nil {
 		return err
 	}
-	fmt.Println("File created successfully")
+	log.Info("File created successfully")
 
 	return nil
 }
