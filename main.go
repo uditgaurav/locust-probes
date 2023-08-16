@@ -31,7 +31,7 @@ func main() {
 
 	podLogsMap, err := extractHelperPod(chaosUID)
 	if err != nil {
-		log.Errorf("failed to get helper pod, err: %v", err)
+		log.Fatalf("failed to get helper pod, err: %v", err)
 	}
 
 	for podName, logs := range podLogsMap {
@@ -40,7 +40,7 @@ func main() {
 
 		log.Infof("pushing logs for pod: %v", podName)
 		if err := PushToFileStore(accountID, projectID, apiKey, podName, logs, folderName, strconv.Itoa(randomNumber)); err != nil {
-			log.Errorf("failed to push helper logs, err: %v", err)
+			log.Fatalf("failed to push helper logs, err: %v", err)
 		}
 	}
 	fmt.Println("PASS")
