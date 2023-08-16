@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -30,7 +29,8 @@ func main() {
 
 	podLogsMap, err := extractHelperPod(chaosUID)
 	if err != nil {
-		log.Fatal("failed to get helper pod, err: %v", err)
+		fmt.Printf("failed to get helper pod, err: %v", err)
+		os.Exit(0)
 	}
 
 	for podName, logs := range podLogsMap {
@@ -39,7 +39,8 @@ func main() {
 
 		fmt.Printf("pushing logs for pod: %v\n", podName)
 		if err := PushToFileStore(accountID, projectID, apiKey, podName, logs, folderName, strconv.Itoa(randomNumber)); err != nil {
-			log.Fatal("failed to push helper logs, err: %v", err)
+			fmt.Printf("failed to push helper logs, err: %v", err)
+			os.Exit(0)
 		}
 	}
 	fmt.Println("PASS")
