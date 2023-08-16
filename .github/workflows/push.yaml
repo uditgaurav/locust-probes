@@ -41,5 +41,4 @@ jobs:
           push: true
           file: Dockerfile
           platforms: linux/amd64
-          tags: chaosnative/locust:latest
-          
+          tags: chaosnative/locust:0.1.0
