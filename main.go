@@ -31,7 +31,7 @@ func main() {
 
 	podLogsMap, err := extractHelperPod(chaosUID)
 	if err != nil {
-		log.Errorf("failed to get helper pod, err: %v", err)
+		log.Errorf("error extracting logs from helper pod: %v", err)
 		return
 	}
 
@@ -56,10 +56,15 @@ func extractHelperPod(chaosUID string) (map[string]string, error) {
 	var err error
 
 	if kubeconfig == "" {
-		// Use in-cluster configuration if KUBECONFIG env var is not set
 		config, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get in-cluster configuration")
+		}
 	} else {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to build config from KUBECONFIG: %s", kubeconfig)
+		}
 	}
 
 	if err != nil {
@@ -86,7 +91,7 @@ func extractHelperPod(chaosUID string) (map[string]string, error) {
 			req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
 			podLogs, err := req.Stream(context.TODO())
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrapf(err, "failed to get logs for pod: %s", pod.Name)
 			}
 			defer podLogs.Close()
 
@@ -145,7 +150,7 @@ Content-Disposition: form-data; name="parentIdentifier"
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("https://app.harness.io/gateway/ng/api/file-store?routingId=%s&accountIdentifier=%s&orgIdentifier=default&projectIdentifier=%s", accountID, accountID, projectID), data)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to create new request")
 	}
 
 	req.Header.Set("x-api-key", apiKey)
@@ -158,7 +163,9 @@ Content-Disposition: form-data; name="parentIdentifier"
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return errors.Errorf("failed to push logs for %v pod, status code: %v", podName, resp.StatusCode)
+		bodyBytes, _ := ioutil.ReadAll(resp.Body)
+		bodyString := string(bodyBytes)
+		return errors.Errorf("failed to push logs for %v pod, status code: %v, response: %s", podName, resp.StatusCode, bodyString)
 	}
 
 	_, err = ioutil.ReadAll(resp.Body)
