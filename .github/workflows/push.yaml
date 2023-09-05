@@ -35,10 +35,16 @@ jobs:
           username: ${{ secrets.DNAME }}
           password: ${{ secrets.DPASS }}
 
-      - name: Build and push go-runner image
-        uses: docker/build-push-action@v3
-        with:
-          push: true
-          file: Dockerfile
-          platforms: linux/amd64
-          tags: chaosnative/locust:latest
+      - name: Push chaosnative ubuntu image
+        run: |
+          docker pull ubuntu:16.04
+          docker tag ubuntu:16.04 chaosnative/chaos-ubuntu:16.04
+          docker push chaosnative/chaos-ubuntu:16.04
+
+      # - name: Build and push go-runner image
+        # uses: docker/build-push-action@v3
+        # with:
+        #   push: true
+        #   file: Dockerfile
+        #   platforms: linux/amd64
+        #   tags: chaosnative/locust:latest
